@@ -3201,10 +3201,11 @@ class ApiService {
  * 就用配置值，空着用推断缺省值。这样实测校准只动配置，代码零改动。
  *
  * 函数声明提升，ApiService 的方法运行时才调它，放在类定义之后没有问题。
+ * 顺手导出：#万象棋接口测试 要把它解析后的生效端点亮出来。
  * @param {'profile'|'battle'} kind
  * @returns {string}
  */
-function chessEndpoint (kind) {
+export function chessEndpoint (kind) {
   let cfg = {}
   try {
     cfg = Config.getDefOrConfig('config') || {}
