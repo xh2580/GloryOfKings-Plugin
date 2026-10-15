@@ -82,6 +82,18 @@ const CODE_PROFILE_HIDDEN = -10107
 const PROFILE_ENDPOINT = '/game/koh/profile'
 
 /**
+ * 万象棋端点缺省值。⚠️⚠️ **这两条是推断值，没有实测依据**（2026-10 调研：
+ * 营地没有任何公开的万象棋接口资料，App 万象棋专区可查棋手资料/战绩/在线状态，
+ * 但抓不到公开文档）。命名规律参照王者侧：
+ *   - 主页 `/game/koh/profile`（koh 是营地的项目代号）→ 推断万象棋是 `/game/wjq/profile`
+ *   - 战绩列表 `/game/morebattlelist` 是跨游戏的路由形态 → 同构推断 `/game/wjq/morebattlelist`
+ * 真实端点在营地 App 万象棋专区抓包后，填 config 的 `chessProfileApi` / `chessBattleApi`
+ * 即可生效（chessEndpoint 读配置），**不用改代码**。协议层铁律见本文件头。
+ */
+const CHESS_DEFAULT_PROFILE_ENDPOINT = '/game/wjq/profile'
+const CHESS_DEFAULT_BATTLE_ENDPOINT = '/game/wjq/morebattlelist'
+
+/**
  * 营地业务码归类。所有端点的判定都从这一张表走，避免出现
  * 「这个端点认 -30107、那个不认」的漂移。
  *
@@ -3138,6 +3150,71 @@ class ApiService {
     // 重试 1 次而不是 2 次：保活是定时任务，失败了下轮再来，没必要退避着耗时间
     return this.#transport.requestWithCandidates('POST', '/user/getcampfriends', {}, {}, 1, targetUserId)
   }
+
+  /* ============================================ 八、王者万象棋（推断端点） */
+
+  /**
+   * 万象棋主页：棋手资料 + 在线状态。
+   *
+   * ⚠️⚠️ 端点与 body 形状都是**推断值**（见 CHESS_DEFAULT_PROFILE_ENDPOINT 的注释），
+   *    未实测。body 沿用王者主页的同名字段（targetUserId / resVersion / apiVersion）——
+   *    万象棋专区在营地里与王者并列，后端同构的可能性最大；字段名真不一样时，
+   *    抓包后把差异记到这里和 utils/chessPushStore.js 的解析候选表里。
+   *
+   * @param {string} ID 营地ID
+   * @param {string} [requesterBotUserId] 发起人 QQ，authStore 按属主取鉴权候选
+   */
+  async getChessProfile (ID, requesterBotUserId = '') {
+    return this.#makeAuthRequest(chessEndpoint('profile'), {
+      targetUserId: ID,
+      targetRoleId: '0',
+      resVersion: '3',
+      recommendPrivacy: '0',
+      apiVersion: '2'
+    }, ID, requesterBotUserId)
+  }
+
+  /**
+   * 万象棋战绩列表（单页）。翻页游标 lastTime 的语义按王者 morebattlelist 推断。
+   *
+   * ⚠️ 隐藏主页的两个码（-10107 / -30032）在王者侧是「营地侧取不到数据」的确定性信号；
+   *    万象棋走同一套账号体系，这两个码大概率语义相同，解析层照认（chessPushStore）。
+   *
+   * @param {string} ID 营地ID
+   * @param {string} [requesterBotUserId]
+   * @param {object} [opts]
+   * @param {number} [opts.lastTime] 翻页游标，0 为第一页
+   */
+  async getChessBattleList (ID, requesterBotUserId = '', { lastTime = 0 } = {}) {
+    return this.#makeAuthRequest(chessEndpoint('battle'), {
+      lastTime,
+      recommendPrivacy: 0,
+      apiVersion: 5,
+      friendUserId: ID,
+      option: 0
+    }, ID, requesterBotUserId)
+  }
+}
+
+/**
+ * 万象棋端点解析：config 的 `chessProfileApi` / `chessBattleApi` 填了真实路径（抓包）
+ * 就用配置值，空着用推断缺省值。这样实测校准只动配置，代码零改动。
+ *
+ * 函数声明提升，ApiService 的方法运行时才调它，放在类定义之后没有问题。
+ * @param {'profile'|'battle'} kind
+ * @returns {string}
+ */
+function chessEndpoint (kind) {
+  let cfg = {}
+  try {
+    cfg = Config.getDefOrConfig('config') || {}
+  } catch (error) {
+    cfg = {}
+  }
+  if (kind === 'profile') {
+    return String(cfg.chessProfileApi || '').trim() || CHESS_DEFAULT_PROFILE_ENDPOINT
+  }
+  return String(cfg.chessBattleApi || '').trim() || CHESS_DEFAULT_BATTLE_ENDPOINT
 }
 
 /** 单例。起个名字是因为下面 estimateRequestSeconds 要用它（default export 是匿名的） */
