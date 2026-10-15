@@ -318,6 +318,37 @@ export function supportGuoba () {
           }
         },
         {
+          field: 'config.chessPushCron',
+          label: '万象棋推送检查间隔',
+          bottomHelpMessage:
+            '王者万象棋的战绩/上下线推送轮询间隔。留空 = 关闭轮询（订阅指令仍可用）。⚠️ 万象棋的营地接口是推断端点（营地没有公开接口资料），未实测校准前大概率拉不到数据。',
+          helpMessage: '修改后重启生效',
+          component: 'EasyCron',
+          componentProps: {
+            placeholder: '默认每 3 分钟'
+          }
+        },
+        {
+          field: 'config.chessProfileApi',
+          label: '万象棋主页端点',
+          bottomHelpMessage:
+            '营地 App 万象棋专区抓包拿到真实路径后填这里（缺省用推断值 /game/wjq/profile），不用改代码。',
+          component: 'Input',
+          componentProps: {
+            placeholder: '留空 = 推断端点 /game/wjq/profile'
+          }
+        },
+        {
+          field: 'config.chessBattleApi',
+          label: '万象棋战绩端点',
+          bottomHelpMessage:
+            '抓包拿到真实路径后填这里（缺省用推断值 /game/wjq/morebattlelist），不用改代码。',
+          component: 'Input',
+          componentProps: {
+            placeholder: '留空 = 推断端点 /game/wjq/morebattlelist'
+          }
+        },
+        {
           component: 'Divider',
           label: '服务端接入'
         },

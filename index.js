@@ -28,6 +28,9 @@ const paths = {
   userSettingsDir: path.join(PluginData, 'user_settings'),
   userDataFile: path.join(PluginData, 'UserData.yaml'),
   gameRecordPushFile: path.join(PluginData, 'GameRecordPush.yaml'),
+  // 万象棋推送的订阅表（apps/chessRecordPush.js / utils/chessPushStore.js）。
+  // 与王者的 GameRecordPush.yaml 刻意分开：端点未校准前这一整块要能独立停摆/拔除
+  chessPushFile: path.join(PluginData, 'ChessPush.yaml'),
   userSettingsFile: path.join(PluginData, 'user_settings.yaml'),
   gameStatsPushSettingsFile: path.join(PluginData, 'gameStatsPushSettings.yaml')
 }
@@ -46,7 +49,8 @@ async function checkAndCreatePaths () {
         await fs.mkdir(filePath, { recursive: true })
       } else {
         // 订阅表要有个 pushList 骨架，其余的空对象就够
-        await writeYamlFile(filePath, key === 'gameRecordPushFile' ? { pushList: {} } : {})
+        const isPushTable = key === 'gameRecordPushFile' || key === 'chessPushFile'
+        await writeYamlFile(filePath, isPushTable ? { pushList: {} } : {})
       }
       logger.info(`[${PluginName}] 初始化数据文件：${key}`)
     } catch (error) {
