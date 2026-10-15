@@ -40,8 +40,10 @@ import {
   summarizeChessSession,
   formatChessBattleText,
   buildChessBattleMessage,
-  formatChessOnlineText,
-  subGroups,
+   formatChessOnlineText,
+   normalizeChessOnlineState,
+   normalizeChessBattles,
+   subGroups,
   withSubGroup,
   withoutSubGroup,
   sleep,
@@ -53,6 +55,7 @@ import {
 import { hotBox } from '../utils/hotState.js'
 import { getCurrentId, pickGroupSafe, resolveMemberName, isBlackUser, Button, shouldQuote, ApiService } from '#utils'
 import { Config } from '#components'
+import { chessEndpoint } from '../utils/api.js'
 
 /**
  * 轮询并发锁 + 游标 + 频控状态。⚠️ 必须锚进 hotBox：模块级 `let` 在热重载后归零，
@@ -100,7 +103,8 @@ export class ChessRecordPush extends plugin {
         { reg: '^#(开启|关闭)(王者)?万象棋战绩推送$', fnc: 'toggleChessBattle' },
         { reg: '^#(开启|关闭)(王者)?万象棋上下线提醒$', fnc: 'toggleChessOnline' },
         { reg: '^#(王者)?万象棋推送(状态|列表)?$', fnc: 'status' },
-        { reg: '^#清空(王者)?万象棋推送$', fnc: 'clearAll', permission: 'master' }
+        { reg: '^#清空(王者)?万象棋推送$', fnc: 'clearAll', permission: 'master' },
+        { reg: '^#(王者)?万象棋接口测试(\\s+\\d{4,32})?$', fnc: 'probeChessApi', permission: 'master' }
       ]
     })
 
@@ -360,6 +364,66 @@ export class ChessRecordPush extends plugin {
     const count = Object.keys(list).length
     saveChessList({})
     await e.reply(`已清空全部万象棋推送订阅（${count} 个）`, shouldQuote())
+  }
+
+  /**
+   * #万象棋接口测试（主人）——直接打一发推断端点，把真实返回码和返回体形状亮出来。
+   *
+   * 校准闭环用：抓包没拿到也没关系，机器人上发这条就能判断
+   *  1. 端点通没通（404 / rpc invalid = 路径不对；-30003 = 登录态问题；0 = 通了）；
+   *  2. 字段对没对上（解析层按候选表猜，命中与否直接写进回复）。
+   * 带营地ID 参数可测任意号，缺省测自己绑定的。
+   */
+  async probeChessApi (e) {
+    const qq = String(e.user_id)
+    const argId = (/#(?:王者)?万象棋接口测试\s+(\d{4,32})/.exec(e.msg || '') || [])[1]
+    const campId = argId || getCurrentId(qq)
+    if (!campId) {
+      await e.reply('先 #绑定营地 [营地ID]，或用 #万象棋接口测试 [营地ID] 指定要测的号', shouldQuote())
+      return
+    }
+
+    const lines = [
+      `主人接口测试：营地ID ${campId}`,
+      `主页端点：${chessEndpoint('profile')}`,
+      `战绩端点：${chessEndpoint('battle')}`
+    ]
+
+    /** 响应压成一行：业务码 + 顶层字段名（校准看的就是这两样） */
+    const brief = res => {
+      const code = res?.returnCode ?? '(无 returnCode)'
+      const msg = String(res?.returnMsg || '').slice(0, 40)
+      const data = res?.data
+      const keys = data && typeof data === 'object'
+        ? Object.keys(data).slice(0, 8).join(', ')
+        : String(data ?? '(空)').slice(0, 60)
+      return `returnCode=${code}${msg ? ` (${msg})` : ''}，data键: ${keys || '(空)'}`
+    }
+
+    try {
+      const res = await ApiService.getChessProfile(campId, qq)
+      lines.push(`主页：${brief(res)}`)
+      const st = normalizeChessOnlineState(res)
+      lines.push(st.gameOnline || st.onlineTime || st.offlineTime || st.roleName
+        ? `主页解析：命中（gameOnline=${st.gameOnline} onlineTime=${st.onlineTime} offlineTime=${st.offlineTime} 名字=${st.roleName || '无'}）`
+        : '主页解析：在线字段没对上（把 data 键名发我，按候选表校准）')
+    } catch (error) {
+      lines.push(`主页：请求失败 ${error.message}`)
+    }
+
+    try {
+      const res = await ApiService.getChessBattleList(campId, qq, { lastTime: 0 })
+      lines.push(`战绩：${brief(res)}`)
+      const norm = normalizeChessBattles(res)
+      const first = norm.list[0]
+      lines.push(norm.list.length
+        ? `战绩解析：${norm.list.length} 条，首条 seq=${first.gameSeq} time=${first.dtEventTime} 名次=${first.rank} 分=${first.score}`
+        : `战绩解析：列表 0 条${norm.isGaming ? '（在对局中）' : ''}`)
+    } catch (error) {
+      lines.push(`战绩：请求失败 ${error.message}`)
+    }
+
+    await e.reply(lines.join('\n'), shouldQuote())
   }
 
   /**
